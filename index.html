@@ -61,7 +61,6 @@
 
 <!-- MediaPipe with pinned versions -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1632090844/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1620248257/drawing_utils.js" crossorigin="anonymous"></script>
 
 <!-- Your files -->
@@ -73,11 +72,10 @@
 <script src="time.js"></script>
 
 <script>
-  const video  = document.getElementById('video');
-  const canvas = document.getElementById('canvas');
-  const ctx    = canvas.getContext('2d');
+const video  = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
 
-// Match canvas to actual display size
 function resizeCanvas() {
   canvas.width  = video.videoWidth  || 640;
   canvas.height = video.videoHeight || 480;
@@ -89,39 +87,42 @@ const hands = new Hands({
 });
 
 hands.setOptions({
-  maxNumHands: 1,          // ← changed to 1, more stable
-  modelComplexity: 0,      // ← changed to 0, faster + less likely to freeze
+  maxNumHands: 1,
+  modelComplexity: 0,
   minDetectionConfidence: 0.6,
   minTrackingConfidence: 0.5
 });
 
 hands.onResults(onResults);
-
-// ← Renamed to mpCamera to avoid ALL conflicts
-const mpCamera = new Camera(video, {
-  onFrame: async () => {
-    resizeCanvas();
-    await hands.send({ image: video });
-  },
-  width: 640,
-  height: 480
-});
-mpCamera.start();
+console.log('Hands object:', hands); // ← add this
+// ── Manual camera loop — no Camera class needed ──
+navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+  video.srcObject = stream;
+  video.onloadedmetadata = () => {
+    video.play();
+    async function loop() {
+      resizeCanvas();
+      await hands.send({ image: video });
+      requestAnimationFrame(loop);
+    }
+    loop();
+  };
+}).catch(err => console.error('Webcam error:', err));
 
 function onResults(results) {
+  console.log('onResults fired', results.multiHandLandmarks); // ← add this
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
     ctx.restore();
-    lastGesture = null;   // reset so next gesture triggers fresh
+    lastGesture = null;
     return;
   }
 
   for (const landmarks of results.multiHandLandmarks) {
     drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#ff4444', lineWidth: 1.5 });
     drawLandmarks(ctx, landmarks, { color: '#ffffff', fillColor: '#ff0000', lineWidth: 1, radius: 3 });
-
     classifyWithDebounce(landmarks, (gesture) => {
       console.log('Detected:', gesture);
       showGestureLabel(gesture);
@@ -144,6 +145,6 @@ function showGestureLabel(gesture) {
   clearTimeout(label._timer);
   label._timer = setTimeout(() => label.style.opacity = '0', 3000);
 }
-  </script>
+</script>
 </body>
 </html>
