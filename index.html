@@ -5,19 +5,12 @@
   <title>JJK Domain Expansion</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #000;
-      height: 100vh;
-      overflow: hidden;
-    }
+    body { background: #000; height: 100vh; overflow: hidden; }
 
-    /* Webcam — small top-left corner */
     .container {
       position: fixed;
-      top: 16px;
-      left: 16px;
-      width: 220px;
-      height: 165px;
+      top: 16px; left: 16px;
+      width: 220px; height: 165px;
       z-index: 10;
       border: 1px solid rgba(255,60,60,0.4);
       border-radius: 6px;
@@ -38,15 +31,12 @@
       transform: scaleX(-1);
     }
 
-    /* Gesture label — centred bottom */
     #gesture-label {
       position: fixed;
-      bottom: 48px;
-      left: 50%;
+      bottom: 48px; left: 50%;
       transform: translateX(-50%);
       color: #ff3333;
-      font-size: 26px;
-      font-weight: 900;
+      font-size: 26px; font-weight: 900;
       font-family: 'Georgia', serif;
       letter-spacing: 6px;
       text-transform: uppercase;
@@ -60,78 +50,100 @@
   </style>
 </head>
 <body>
-
   <div class="container">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
   </div>
-
   <div id="gesture-label"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="gesture.js"></script>
-  <script src="effects.js"></script>
+<!-- Three.js FIRST -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
-  <script>
-    const video  = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx    = canvas.getContext('2d');
+<!-- MediaPipe with pinned versions -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1632090844/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1620248257/drawing_utils.js" crossorigin="anonymous"></script>
 
-    canvas.width  = 640;
-    canvas.height = 480;
+<!-- Your files -->
+<script src="gesture.js"></script>
+<script src="effects.js"></script>
+<script src="void.js"></script>
+<script src="mal.js"></script>
+<script src="chimera.js"></script>
+<script src="time.js"></script>
 
-    const hands = new Hands({
-      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+<script>
+  const video  = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx    = canvas.getContext('2d');
+
+// Match canvas to actual display size
+function resizeCanvas() {
+  canvas.width  = video.videoWidth  || 640;
+  canvas.height = video.videoHeight || 480;
+}
+
+const hands = new Hands({
+  locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`
+});
+
+hands.setOptions({
+  maxNumHands: 1,          // ← changed to 1, more stable
+  modelComplexity: 0,      // ← changed to 0, faster + less likely to freeze
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.5
+});
+
+hands.onResults(onResults);
+
+// ← Renamed to mpCamera to avoid ALL conflicts
+const mpCamera = new Camera(video, {
+  onFrame: async () => {
+    resizeCanvas();
+    await hands.send({ image: video });
+  },
+  width: 640,
+  height: 480
+});
+mpCamera.start();
+
+function onResults(results) {
+  ctx.save();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+    ctx.restore();
+    lastGesture = null;   // reset so next gesture triggers fresh
+    return;
+  }
+
+  for (const landmarks of results.multiHandLandmarks) {
+    drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#ff4444', lineWidth: 1.5 });
+    drawLandmarks(ctx, landmarks, { color: '#ffffff', fillColor: '#ff0000', lineWidth: 1, radius: 3 });
+
+    classifyWithDebounce(landmarks, (gesture) => {
+      console.log('Detected:', gesture);
+      showGestureLabel(gesture);
+      triggerDomainExpansion(gesture);
     });
+  }
+  ctx.restore();
+}
 
-    hands.setOptions({
-      maxNumHands: 2,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.7,
-      minTrackingConfidence: 0.5
-    });
-
-    hands.onResults(onResults);
-
-    const camera = new Camera(video, {
-      onFrame: async () => { await hands.send({ image: video }); },
-      width: 640,
-      height: 480
-    });
-    camera.start();
-
-    function onResults(results) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!results.multiHandLandmarks) return;
-
-      for (const landmarks of results.multiHandLandmarks) {
-        drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#ff4444', lineWidth: 1.5 });
-        drawLandmarks(ctx, landmarks, { color: '#ffffff', fillColor: '#ff0000', lineWidth: 1, radius: 3 });
-
-        classifyWithDebounce(landmarks, (gesture) => {
-          console.log('Detected:', gesture);
-          showGestureLabel(gesture);
-          triggerDomainExpansion(gesture);
-        });
-      }
-    }
-
-    function showGestureLabel(gesture) {
-      const label = document.getElementById('gesture-label');
-      const names = {
-        malevolent_shrine: '呪術廻戦  ·  Malevolent Shrine',
-        unlimited_void:    '∞  ·  Unlimited Void',
-        chimera_shadow:    '十種影法術  ·  Chimera Shadow Garden',
-        time_strike:       '獄門疆  ·  Prison Realm'
-      };
-      label.textContent = names[gesture] || gesture;
-      label.style.opacity = '1';
-      clearTimeout(label._timer);
-      label._timer = setTimeout(() => label.style.opacity = '0', 3000);
-    }
+function showGestureLabel(gesture) {
+  const label = document.getElementById('gesture-label');
+  const names = {
+    malevolent_shrine: '呪術廻戦  ·  Malevolent Shrine',
+    unlimited_void:    '∞  ·  Unlimited Void',
+    chimera_shadow:    '十種影法術  ·  Chimera Shadow Garden',
+    time_strike:       '獄門疆  ·  Prison Realm'
+  };
+  label.textContent = names[gesture] || gesture;
+  label.style.opacity = '1';
+  clearTimeout(label._timer);
+  label._timer = setTimeout(() => label.style.opacity = '0', 3000);
+}
   </script>
 </body>
 </html>
