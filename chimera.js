@@ -3,8 +3,7 @@
 // particle feathers sweeping in all directions
 
 function triggerChimeraShadow() {
-  clearScene();
-  currentEffect = 'chimera_shadow';
+
   threeRenderer.setClearColor(0x000000, 1);
 
   const N = 15000;

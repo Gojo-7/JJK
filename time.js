@@ -3,8 +3,7 @@
 // iris ring particles, pupil void, pulsing veins
 
 function triggerTimeStrike() {
-  clearScene();
-  currentEffect = 'time_strike';
+
   threeRenderer.setClearColor(0x080002, 1);
   threeScene.fog = new THREE.FogExp2(0x0a0003, 0.07);
 

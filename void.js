@@ -3,8 +3,6 @@
 // with white ink-splash bursts and blue-white accents
 
 function triggerUnlimitedVoid() {
-  clearScene();
-  currentEffect = 'unlimited_void';
   threeRenderer.setClearColor(0x000008, 1);
 
   const N = 12000;

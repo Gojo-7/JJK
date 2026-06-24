@@ -3,8 +3,6 @@
 // arcs, skull-pile base, demonic horns — all particles
 
 function triggerMalevolentShrine() {
-  clearScene();
-  currentEffect = 'malevolent_shrine';
   threeRenderer.setClearColor(0x050000, 1);
   threeScene.fog = new THREE.FogExp2(0x0a0000, 0.06);
 
