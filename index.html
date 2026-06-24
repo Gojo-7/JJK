@@ -5,47 +5,30 @@
   <title>JJK Domain Expansion</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; height: 100vh; overflow: hidden; }
+    body { background: #000; display: flex;
+           justify-content: center; align-items: center;
+           height: 100vh; overflow: hidden; }
 
-    .container {
-      position: fixed;
-      top: 16px; left: 16px;
-      width: 220px; height: 165px;
-      z-index: 10;
-      border: 1px solid rgba(255,60,60,0.4);
-      border-radius: 6px;
-      overflow: hidden;
-      box-shadow: 0 0 20px rgba(255,0,0,0.2);
-    }
+    .container { position: relative; width: 100vw; height: 100vh; }
 
+    /* Webcam feed — flipped so it feels like a mirror */
     video {
       position: absolute;
-      width: 100%; height: 100%;
+      top: 10px; left: 10px;
+      width: 200px; height: 150px;
       transform: scaleX(-1);
       object-fit: cover;
+      border: 2px solid white;
+      z-index: 10;
     }
 
+    /* Canvas sits exactly on top of the video */
     canvas {
       position: absolute;
-      width: 100%; height: 100%;
+      top: 10px; left: 10px;
+      width: 200px; height: 150px;
       transform: scaleX(-1);
-    }
-
-    #gesture-label {
-      position: fixed;
-      bottom: 48px; left: 50%;
-      transform: translateX(-50%);
-      color: #ff3333;
-      font-size: 26px; font-weight: 900;
-      font-family: 'Georgia', serif;
-      letter-spacing: 6px;
-      text-transform: uppercase;
-      text-shadow: 0 0 30px #ff0000, 0 0 60px #ff000088;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.2s ease;
-      white-space: nowrap;
-      z-index: 20;
+      z-index: 11;
     }
   </style>
 </head>
@@ -54,97 +37,109 @@
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
   </div>
-  <div id="gesture-label"></div>
 
-<!-- Three.js FIRST -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- MediaPipe Hands from CDN (free, no key needed) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="gesture.js"></script>
+  <script src="effects.js"></script>
+  <script>
+    const video  = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx    = canvas.getContext('2d');
 
-<!-- MediaPipe with pinned versions -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1620248257/drawing_utils.js" crossorigin="anonymous"></script>
+    canvas.width  = 640;
+    canvas.height = 480;
 
-<!-- Your files -->
-<script src="gesture.js"></script>
-<script src="effects.js"></script>
-<script src="void.js"></script>
-<script src="mal.js"></script>
-<script src="chimera.js"></script>
-<script src="time.js"></script>
+    // --- MediaPipe Hands setup ---
+    const hands = new Hands({
+      locateFile: file =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
 
-<script>
-const video  = document.getElementById('video');
-const canvas = document.getElementById('canvas');
-const ctx    = canvas.getContext('2d');
+    hands.setOptions({
+      maxNumHands: 2,        // detect both hands
+      modelComplexity: 1,    // 0 = faster, 1 = more accurate
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.5
+    });
 
-function resizeCanvas() {
-  canvas.width  = video.videoWidth  || 640;
-  canvas.height = video.videoHeight || 480;
-}
+    // This fires every frame with detected hand data
+    hands.onResults(onResults);
 
-const hands = new Hands({
-  locateFile: file =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`
-});
+    // --- Camera loop ---
+    const camera = new Camera(video, {
+      onFrame: async () => {
+        await hands.send({ image: video });
+      },
+      width: 640,
+      height: 480
+    });
+    camera.start();
 
-hands.setOptions({
-  maxNumHands: 1,
-  modelComplexity: 0,
-  minDetectionConfidence: 0.6,
-  minTrackingConfidence: 0.5
-});
-
-hands.onResults(onResults);
-console.log('Hands object:', hands); // ← add this
-// ── Manual camera loop — no Camera class needed ──
-navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
-  video.srcObject = stream;
-  video.onloadedmetadata = () => {
-    video.play();
-    async function loop() {
-      resizeCanvas();
-      await hands.send({ image: video });
-      requestAnimationFrame(loop);
-    }
-    loop();
-  };
-}).catch(err => console.error('Webcam error:', err));
-
-function onResults(results) {
-  console.log('onResults fired', results.multiHandLandmarks); // ← add this
-  ctx.save();
+    // --- Draw results each frame ---
+    function onResults(results) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-    ctx.restore();
-    lastGesture = null;
-    return;
-  }
+  if (!results.multiHandLandmarks) return;
 
   for (const landmarks of results.multiHandLandmarks) {
-    drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#ff4444', lineWidth: 1.5 });
-    drawLandmarks(ctx, landmarks, { color: '#ffffff', fillColor: '#ff0000', lineWidth: 1, radius: 3 });
+    drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {
+      color: '#ff4444', lineWidth: 2
+    });
+    drawLandmarks(ctx, landmarks, {
+      color: '#ffffff', fillColor: '#ff0000',
+      lineWidth: 1, radius: 4
+    });
+
+    // ← NEW: classify gesture each frame
     classifyWithDebounce(landmarks, (gesture) => {
+      if (currentEffect === gesture) return; // Prevent flickering
       console.log('Detected:', gesture);
+
+      // Show gesture name on screen temporarily
       showGestureLabel(gesture);
-      triggerDomainExpansion(gesture);
+
+      // In Step 3 we'll trigger the Three.js effect here
+       triggerDomainExpansion(gesture); // ← add this line
+    }, () => {
+      if (currentEffect) {
+        console.log('Gesture lost, clearing effect');
+        dismissEffect();
+      }
     });
   }
-  ctx.restore();
 }
 
+// Displays gesture name on screen for 2 seconds
 function showGestureLabel(gesture) {
-  const label = document.getElementById('gesture-label');
+  let label = document.getElementById('gesture-label');
+  if (!label) {
+    label = document.createElement('div');
+    label.id = 'gesture-label';
+    label.style.cssText = `
+      position: fixed; bottom: 40px; left: 50%;
+      transform: translateX(-50%);
+      color: #ff4444; font-size: 28px; font-weight: bold;
+      font-family: sans-serif; letter-spacing: 4px;
+      text-transform: uppercase; text-shadow: 0 0 20px #ff0000;
+      pointer-events: none;
+    `;
+    document.body.appendChild(label);
+  }
   const names = {
-    malevolent_shrine: '呪術廻戦  ·  Malevolent Shrine',
-    unlimited_void:    '∞  ·  Unlimited Void',
-    chimera_shadow:    '十種影法術  ·  Chimera Shadow Garden',
-    time_strike:       '獄門疆  ·  Prison Realm'
+    malevolent_shrine: '呪術廻戦 · Malevolent Shrine',
+    unlimited_void:    '∞ · Unlimited Void',
+    chimera_shadow:    '十種影法術 · Chimera Shadow Garden',
+    time_strike:       'Ratio · Time Strike'
   };
   label.textContent = names[gesture] || gesture;
   label.style.opacity = '1';
   clearTimeout(label._timer);
-  label._timer = setTimeout(() => label.style.opacity = '0', 3000);
+  label._timer = setTimeout(() => label.style.opacity = '0', 2000);
 }
-</script>
+  </script>
 </body>
 </html>
